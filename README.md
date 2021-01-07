@@ -1,6 +1,15 @@
 # hello_gcp
 
+if you see below message, you retry command *terraform apply*
+```
+Error loading zone 'us-central1-a': googleapi: Error 403: Compute Engine API has not been used in project project_id before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/compute.googleapis.com/overview?project=project_id then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry., accessNotConfigured
+```
+
+
 ## terraform
+
+
+
 
 ## gcloud
 
@@ -17,6 +26,12 @@ gcloud services enable compute.googleapis.com
 
 # enable gcp service cloudbilling in your project.
 gcloud services enable cloudbilling.googleapis.com
+
+# show service account scope list
+gcloud compute instances create --scope --help
+
+# show services api-keys list. this function is alpha.
+gcloud alpha services api-keys list
 
 # shoe your config
 gcloud config list
@@ -102,5 +117,6 @@ gcloud compute instances list
 # pip3 install ec2instanceconnectcli
 # instance ID
 
-mssh fedora@*instance-id*
+# oslogin
+gcloud compute ssh *VM_NAME*
 ```

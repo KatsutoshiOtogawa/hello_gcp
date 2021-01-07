@@ -7,20 +7,18 @@ terraform {
   }
 }
 
-# data "template_file" "user_data" {
-#   template = file("../../provision.sh")
-#   vars = {
-#     ORACLE_PASSWORD = ""
-#   }
-# }
-
 # set Environment variable TF_VAR_gcp_access_key.
 # use gcp access token.
 variable "gcp_access_key" {}
 
 # set Environment variable TF_VAR_billing_account_id.
-# use gcp access token.
+# use gcp project enable payment.
 variable "billing_account_id" {}
+
+# set Environment variable TF_VAR_gce_ssh_user.
+# default install,billing gmail username ex) *awesomename*@gmail.com
+# use gcp access token.
+variable "gce_ssh_user" {}
 
 
 provider "google" {
@@ -38,16 +36,11 @@ variable "gcp_service_list" {
     ]
 }
 
-# provisioner "local-exec" {
-#   command = "genuuid  > /tmp/terraform-$(data).txt || "
-#   interpreter = ["bash", "-e"]
-# }
-
 resource "google_project" "hello_terraform" {
   name       = "hello-terraform"
-  project_id = "hello-terraform2wrew5biu23125"
+  project_id = "hello-terraform16"
 
-   billing_account = var.billing_account_id
+  billing_account = var.billing_account_id
   
 }
 
@@ -59,27 +52,7 @@ resource "google_project_service" "project" {
   disable_dependent_services = false
 }
 
-# google
-
-# resource "google_project_iam_policy" "project_iam" {
-#   project     = google_project.hello_terraform.project_id
-#   policy_data = data.google_iam_policy.admin_iam_policy.policy_data
-# }
-
-# data "google_iam_policy" "admin_iam_policy" {
-#   binding {
-#     role = "roles/editor"
-
-#     # serviceAccount:terraform@${GCP_PROJECT_ID}.iam.gserviceaccount.com
-#     members = [
-#       "serviceAccount:${google_service_account.sa.account_id}@${google_project.hello_terraform.project_id}.iam.gserviceaccount.com",
-#     ]
-#   }
-# }
-
 resource "google_service_account" "sa" {
-  # account_id   = "terraform@${google_project.hello_terraform.project_id}.iam.gserviceaccount.com"
-  # account_id   = "serviceAccount:terraform"
   account_id   = "terraform"
   display_name = "Terraform service account"
   project = google_project.hello_terraform.project_id
@@ -87,7 +60,10 @@ resource "google_service_account" "sa" {
 
 resource "google_service_account_iam_binding" "admin-account-iam" {
   service_account_id = google_service_account.sa.name
+
+  # editors role contain roles/compute.osAdminLogin priviledge
   role               = "roles/editor"
+
 
   members = [
     "serviceAccount:${google_service_account.sa.account_id}@${google_project.hello_terraform.project_id}.iam.gserviceaccount.com",
@@ -98,22 +74,6 @@ resource "google_service_account_key" "mykey" {
   service_account_id = google_service_account.sa.name
   public_key_type    = "TYPE_X509_PEM_FILE"
 }
-
-
-# google_compute_security_policy
-# resource "kubernetes_secret" "google-application-credentials" {
-#   metadata = {
-#     name = "google-application-credentials"
-#   }
-#   data {
-#     credentials.json = "${base64decode(google_service_account_key.mykey.private_key)}"
-#   }
-# }
-
-# resource "google_service_account_iam_policy" "admin-account-iam" {
-#   service_account_id = google_service_account.sa.name
-#   policy_data        = data.google_iam_policy.admin_iam_policy.policy_data
-# }
 
 # register ssh public_key
 resource "google_os_login_ssh_public_key" "cache" {
@@ -136,9 +96,10 @@ resource "google_compute_instance" "default" {
   }
 
   // Local SSD disk
-  scratch_disk {
-    interface = "SCSI"
-  }
+  # scratch_disk {
+  #   # f1-micro is not support SCSI
+  #   interface = "SCSI"
+  # }
 
   network_interface {
     network = "default"
@@ -149,15 +110,50 @@ resource "google_compute_instance" "default" {
   }
 
   metadata = {
-    foo = "bar"
-    # ssh-keys = var.gce_ssh_user}:file("~/.ssh/id_rsa.pub")
+    # enable-oslogin = "TRUE"
+    ssh-keys = "${var.gce_ssh_user}:${file("~/.ssh/id_rsa.pub")}"
   }
 
   # metadata_startup_script = "echo hi > /test.txt"
 
   service_account {
     email = google_service_account.sa.email
-    scopes = ["userinfo-email", "compute-ro", "storage-ro"]
+
+    scopes = [
+      "compute-rw"
+      ,"storage-rw"
+    ]
   }
 
+}
+
+resource "null_resource" "testinstance" {
+
+  depends_on = [
+    google_compute_instance.default
+  ]
+
+  connection {
+            host = google_compute_instance.default.network_interface.0.access_config.0.nat_ip
+            type = "ssh"
+            user = var.gce_ssh_user
+            private_key = file("~/.ssh/id_rsa")
+  }
+
+  provisioner "remote-exec" {
+    script = "provision.sh"
+    
+  }
+}
+
+output "public_ip_address" {
+  value = google_compute_instance.default.network_interface.0.access_config.0.nat_ip
+}
+
+# output "public_dns_name" {
+#   value = aws_eip.main_eip.public_dns
+# }
+
+output "instance_id" {
+  value = google_compute_instance.default.id
 }
